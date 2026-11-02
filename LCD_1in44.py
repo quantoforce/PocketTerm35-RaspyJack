@@ -1,4 +1,4 @@
- # -*- coding:UTF-8 -*-
+# -*- coding:UTF-8 -*-
  ##
  # | file      	:	LCD_1IN44.py
  # |	version		:	V3.0
@@ -35,7 +35,8 @@ from PIL import Image as PILImage, ImageOps
 
 # ---------------------------------------------------------------------------
 # Display type detection from gui_conf.json
-# Supported: "ST7735_128" (128x128), "ST7789_240" (240x240), "CARDPUTER_320" (320x170)
+# Supported: "ST7735_128" (128x128), "ST7789_240" (240x240),
+#            "CARDPUTER_320" (320x170), "POCKETTERM_640" (640x480)
 # ---------------------------------------------------------------------------
 _DISPLAY_TYPE = "ST7735_128"  # default
 
@@ -68,45 +69,27 @@ if _DISPLAY_TYPE != "CARDPUTER_320":
             pass
 
 # ---------------------------------------------------------------------------
-# Resolution constants based on display type
+# Display configuration table
 # ---------------------------------------------------------------------------
-if _DISPLAY_TYPE == "CARDPUTER_320":
-    LCD_WIDTH  = 320
-    LCD_HEIGHT = 170
-    LCD_X = 0
-    LCD_Y = 0
-    LCD_X_MAXPIXEL = 320
-    LCD_Y_MAXPIXEL = 170
-elif _DISPLAY_TYPE == "ST7789_240":
-    LCD_WIDTH  = 240
-    LCD_HEIGHT = 240
-    LCD_X = 0
-    LCD_Y = 0
-    LCD_X_MAXPIXEL = 240
-    LCD_Y_MAXPIXEL = 240
-else:
-    # ST7735_128 — original 1.44" display (default)
-    LCD_WIDTH  = 128
-    LCD_HEIGHT = 128
-    LCD_X = 2
-    LCD_Y = 1
-    LCD_X_MAXPIXEL = 132
-    LCD_Y_MAXPIXEL = 162
-
-# ---------------------------------------------------------------------------
-# Scale helper – payloads import this: from LCD_1in44 import S
-# All coordinates are authored for 128; S() adapts them to the actual panel.
-# ---------------------------------------------------------------------------
-if _DISPLAY_TYPE == "CARDPUTER_320":
-    LCD_SCALE = LCD_HEIGHT / 128  # 1.328 — use height (constraining dimension) for widescreen
-else:
-    LCD_SCALE = LCD_WIDTH / 128  # 1.0 on 128x128, 1.875 on 240x240
+_DISPLAYS = {
+    "POCKETTERM_640": {"w": 640, "h": 480, "x": 0, "y": 0, "xmax": 640, "ymax": 480, "scale": 640/128},
+    "CARDPUTER_320": {"w": 320, "h": 170, "x": 0, "y": 0, "xmax": 320, "ymax": 170, "scale": 170/128},
+    "ST7789_240":   {"w": 240, "h": 240, "x": 0, "y": 0, "xmax": 240, "ymax": 240, "scale": 240/128},
+    "ST7735_128":   {"w": 128, "h": 128, "x": 2, "y": 1, "xmax": 132, "ymax": 162, "scale": 128/128},
+}
+_D = _DISPLAYS.get(_DISPLAY_TYPE, _DISPLAYS["ST7735_128"])
+LCD_WIDTH, LCD_HEIGHT = _D["w"], _D["h"]
+LCD_X, LCD_Y = _D["x"], _D["y"]
+LCD_X_MAXPIXEL, LCD_Y_MAXPIXEL = _D["xmax"], _D["ymax"]
+LCD_SCALE = _D["scale"]
 
 def S(v):
     """Scale a 128-base pixel value to the current display resolution."""
     return int(v * LCD_SCALE)
 
+# ---------------------------------------------------------------------------
 # WebUI frame mirror (used by device_server.py)
+# ---------------------------------------------------------------------------
 _FRAME_MIRROR_PATH = os.environ.get("RJ_FRAME_PATH", "/dev/shm/raspyjack_last.jpg")
 _FRAME_MIRROR_ENABLED = os.environ.get("RJ_FRAME_MIRROR", "1") != "0"
 _CARDPUTER_FRAME_PATH = os.environ.get("RJ_CARDPUTER_FRAME_PATH", "/dev/shm/raspyjack_cardputer.jpg")
@@ -127,14 +110,12 @@ try:
 except AttributeError:
     _resampling_lanczos = PILImage.LANCZOS
 
-
 def _build_cardputer_frame(src_image):
     if _CARDPUTER_FRAME_MODE == "stretch":
         return src_image.resize((_CARDPUTER_FRAME_WIDTH, _CARDPUTER_FRAME_HEIGHT), _resampling_lanczos)
     if _CARDPUTER_FRAME_MODE == "contain":
         return ImageOps.contain(src_image, (_CARDPUTER_FRAME_WIDTH, _CARDPUTER_FRAME_HEIGHT), _resampling_lanczos)
     return ImageOps.fit(src_image, (_CARDPUTER_FRAME_WIDTH, _CARDPUTER_FRAME_HEIGHT), _resampling_lanczos)
-
 
 def _save_cardputer_frame(src_image):
     if not _CARDPUTER_FRAME_ENABLED:
@@ -162,8 +143,9 @@ D2U_L2R = 7
 D2U_R2L = 8
 SCAN_DIR_DFT = U2D_R2L
 
-
 class LCD:
+    _FB_DISPLAYS = ("CARDPUTER_320", "POCKETTERM_640")
+
     def __init__(self):
         self.width = LCD_WIDTH
         self.height = LCD_HEIGHT
@@ -196,21 +178,15 @@ class LCD:
             LCD_Config.SPI_Write_Byte([Data >> 8])
             LCD_Config.SPI_Write_Byte([Data & 0xff])
 
-    # ------------------------------------------------------------------
-    # ST7735S register initialization (1.44" 128x128)
-    # ------------------------------------------------------------------
     def _LCD_InitReg_ST7735(self):
-        #ST7735R Frame Rate
         self.LCD_WriteReg(0xB1)
         self.LCD_WriteData_8bit(0x01)
         self.LCD_WriteData_8bit(0x2C)
         self.LCD_WriteData_8bit(0x2D)
-
         self.LCD_WriteReg(0xB2)
         self.LCD_WriteData_8bit(0x01)
         self.LCD_WriteData_8bit(0x2C)
         self.LCD_WriteData_8bit(0x2D)
-
         self.LCD_WriteReg(0xB3)
         self.LCD_WriteData_8bit(0x01)
         self.LCD_WriteData_8bit(0x2C)
@@ -218,34 +194,25 @@ class LCD:
         self.LCD_WriteData_8bit(0x01)
         self.LCD_WriteData_8bit(0x2C)
         self.LCD_WriteData_8bit(0x2D)
-
-        #Column inversion
         self.LCD_WriteReg(0xB4)
         self.LCD_WriteData_8bit(0x07)
-
-        #ST7735R Power Sequence
         self.LCD_WriteReg(0xC0)
         self.LCD_WriteData_8bit(0xA2)
         self.LCD_WriteData_8bit(0x02)
         self.LCD_WriteData_8bit(0x84)
         self.LCD_WriteReg(0xC1)
         self.LCD_WriteData_8bit(0xC5)
-
         self.LCD_WriteReg(0xC2)
         self.LCD_WriteData_8bit(0x0A)
         self.LCD_WriteData_8bit(0x00)
-
         self.LCD_WriteReg(0xC3)
         self.LCD_WriteData_8bit(0x8A)
         self.LCD_WriteData_8bit(0x2A)
         self.LCD_WriteReg(0xC4)
         self.LCD_WriteData_8bit(0x8A)
         self.LCD_WriteData_8bit(0xEE)
-
-        self.LCD_WriteReg(0xC5)#VCOM
+        self.LCD_WriteReg(0xC5)
         self.LCD_WriteData_8bit(0x0E)
-
-        #ST7735R Gamma Sequence
         self.LCD_WriteReg(0xe0)
         self.LCD_WriteData_8bit(0x0f)
         self.LCD_WriteData_8bit(0x1a)
@@ -263,7 +230,6 @@ class LCD:
         self.LCD_WriteData_8bit(0x07)
         self.LCD_WriteData_8bit(0x02)
         self.LCD_WriteData_8bit(0x10)
-
         self.LCD_WriteReg(0xe1)
         self.LCD_WriteData_8bit(0x0f)
         self.LCD_WriteData_8bit(0x1b)
@@ -281,73 +247,41 @@ class LCD:
         self.LCD_WriteData_8bit(0x07)
         self.LCD_WriteData_8bit(0x03)
         self.LCD_WriteData_8bit(0x10)
-
-        #Enable test command
         self.LCD_WriteReg(0xF0)
         self.LCD_WriteData_8bit(0x01)
-
-        #Disable ram power save mode
         self.LCD_WriteReg(0xF6)
         self.LCD_WriteData_8bit(0x00)
-
-        #65k mode
         self.LCD_WriteReg(0x3A)
         self.LCD_WriteData_8bit(0x05)
 
-    # ------------------------------------------------------------------
-    # ST7789 register initialization (1.3" 240x240)
-    # ------------------------------------------------------------------
     def _LCD_InitReg_ST7789(self):
-        # Memory Data Access Control
         self.LCD_WriteReg(0x36)
         self.LCD_WriteData_8bit(0x00)
-
-        # RGB 5-6-5-bit color format
         self.LCD_WriteReg(0x3A)
         self.LCD_WriteData_8bit(0x05)
-
-        # Porch Setting
         self.LCD_WriteReg(0xB2)
         self.LCD_WriteData_8bit(0x0C)
         self.LCD_WriteData_8bit(0x0C)
         self.LCD_WriteData_8bit(0x00)
         self.LCD_WriteData_8bit(0x33)
         self.LCD_WriteData_8bit(0x33)
-
-        # Gate Control
         self.LCD_WriteReg(0xB7)
         self.LCD_WriteData_8bit(0x35)
-
-        # VCOM Setting (higher value reduces ghosting/image retention)
         self.LCD_WriteReg(0xBB)
         self.LCD_WriteData_8bit(0x2B)
-
-        # LCM Control
         self.LCD_WriteReg(0xC0)
         self.LCD_WriteData_8bit(0x2C)
-
-        # VDV and VRH Command Enable
         self.LCD_WriteReg(0xC2)
         self.LCD_WriteData_8bit(0x01)
-
-        # VRH Set (slightly higher for cleaner transitions)
         self.LCD_WriteReg(0xC3)
         self.LCD_WriteData_8bit(0x15)
-
-        # VDV Set
         self.LCD_WriteReg(0xC4)
         self.LCD_WriteData_8bit(0x20)
-
-        # Frame Rate Control in Normal Mode (0x01 = ~111Hz, reduces ghosting)
         self.LCD_WriteReg(0xC6)
         self.LCD_WriteData_8bit(0x01)
-
-        # Power Control 1
         self.LCD_WriteReg(0xD0)
         self.LCD_WriteData_8bit(0xA4)
         self.LCD_WriteData_8bit(0xA1)
-
-        # Positive Voltage Gamma Control
         self.LCD_WriteReg(0xE0)
         self.LCD_WriteData_8bit(0xD0)
         self.LCD_WriteData_8bit(0x04)
@@ -363,8 +297,6 @@ class LCD:
         self.LCD_WriteData_8bit(0x0B)
         self.LCD_WriteData_8bit(0x1F)
         self.LCD_WriteData_8bit(0x23)
-
-        # Negative Voltage Gamma Control
         self.LCD_WriteReg(0xE1)
         self.LCD_WriteData_8bit(0xD0)
         self.LCD_WriteData_8bit(0x04)
@@ -380,31 +312,18 @@ class LCD:
         self.LCD_WriteData_8bit(0x1F)
         self.LCD_WriteData_8bit(0x20)
         self.LCD_WriteData_8bit(0x23)
-
-        # Display Inversion On (ST7789 needs this for correct colors)
         self.LCD_WriteReg(0x21)
 
-    # ------------------------------------------------------------------
-    # Dispatch to the correct init register sequence
-    # ------------------------------------------------------------------
     def LCD_InitReg(self):
         if self.display_type == "ST7789_240":
             self._LCD_InitReg_ST7789()
         else:
             self._LCD_InitReg_ST7735()
 
-    #********************************************************************************
-    #function:	Set the display scan and color transfer modes
-    #parameter:
-    #		Scan_dir   :   Scan direction
-    #		Colorchose :   RGB or GBR color format
-    #********************************************************************************
     def LCD_SetGramScanWay(self, Scan_dir):
-        #Get the screen scan direction
         self.LCD_Scan_Dir = Scan_dir
 
         if self.display_type == "ST7789_240":
-            # ST7789: simpler MADCTL handling
             if (Scan_dir == L2R_U2D) or (Scan_dir == L2R_D2U) or (Scan_dir == R2L_U2D) or (Scan_dir == R2L_D2U):
                 self.width  = LCD_HEIGHT
                 self.height = LCD_WIDTH
@@ -427,7 +346,7 @@ class LCD:
                 madctl = 0x60
             elif Scan_dir == D2U_L2R:
                 madctl = 0xA0
-            else:  # D2U_R2L
+            else:
                 madctl = 0xE0
 
             self.LCD_X_Adjust = LCD_X
@@ -437,8 +356,6 @@ class LCD:
             self.LCD_WriteData_8bit(madctl)
             return
 
-        # ST7735S: original logic
-        #Get GRAM and LCD width and height
         if (Scan_dir == L2R_U2D) or (Scan_dir == L2R_D2U) or (Scan_dir == R2L_U2D) or (Scan_dir == R2L_D2U) :
             self.width	= LCD_HEIGHT
             self.height 	= LCD_WIDTH
@@ -448,7 +365,7 @@ class LCD:
                 MemoryAccessReg_Data = 0X00 | 0x80
             elif Scan_dir == R2L_U2D:
                 MemoryAccessReg_Data = 0x40 | 0x00
-            else:		#R2L_D2U:
+            else:
                 MemoryAccessReg_Data = 0x40 | 0x80
         else:
             self.width	= LCD_WIDTH
@@ -459,10 +376,9 @@ class LCD:
                 MemoryAccessReg_Data = 0X00 | 0x40 | 0x20
             elif Scan_dir == D2U_L2R:
                 MemoryAccessReg_Data = 0x80 | 0x00 | 0x20
-            else:		#R2L_D2U
+            else:
                 MemoryAccessReg_Data = 0x40 | 0x80 | 0x20
 
-        #please set (MemoryAccessReg_Data & 0x10) != 1
         if (MemoryAccessReg_Data & 0x10) != 1:
             self.LCD_X_Adjust = LCD_Y
             self.LCD_Y_Adjust = LCD_X
@@ -470,74 +386,45 @@ class LCD:
             self.LCD_X_Adjust = LCD_X
             self.LCD_Y_Adjust = LCD_Y
 
-        # Set the read / write scan direction of the frame memory
-        self.LCD_WriteReg(0x36)		#MX, MY, RGB mode
-        self.LCD_WriteData_8bit( MemoryAccessReg_Data | 0x08)	#0x08 set RGB
+        self.LCD_WriteReg(0x36)
+        self.LCD_WriteData_8bit( MemoryAccessReg_Data | 0x08)
 
-    #/********************************************************************************
-    #function:
-    #			initialization
-    #********************************************************************************/
     def LCD_Init(self, Lcd_ScanDir=None):
         if (LCD_Config.GPIO_Init() != 0):
             return -1
 
-        if self.display_type == "CARDPUTER_320":
+        if self.display_type in self._FB_DISPLAYS:
             return 0
 
-        # Set SPI speed based on display type
         if self.display_type == "ST7789_240":
-            LCD_Config.SPI.max_speed_hz = 62000000  # ST7789 max: 62.5MHz
+            LCD_Config.SPI.max_speed_hz = 62000000
         else:
             LCD_Config.SPI.max_speed_hz = 9000000
 
-        #Turn on the backlight
         GPIO.output(LCD_Config.LCD_BL_PIN,GPIO.HIGH)
-
-        #Hardware reset
         self.LCD_Reset()
-
-        #Set the initialization register
         self.LCD_InitReg()
-
-        #Set the display scan and color transfer modes
         self.LCD_SetGramScanWay(Lcd_ScanDir or SCAN_DIR_DFT)
         LCD_Config.Driver_Delay_ms(200)
-
-        #sleep out
         self.LCD_WriteReg(0x11)
         LCD_Config.Driver_Delay_ms(120)
-
-        #Turn on the LCD display
         self.LCD_WriteReg(0x29)
 
-    #/********************************************************************************
-    #function:	Sets the start position and size of the display area
-    #parameter:
-    #	Xstart 	:   X direction Start coordinates
-    #	Ystart  :   Y direction Start coordinates
-    #	Xend    :   X direction end coordinates
-    #	Yend    :   Y direction end coordinates
-    #********************************************************************************/
     def LCD_SetWindows(self, Xstart, Ystart, Xend, Yend):
-        #set the X coordinates
         self.LCD_WriteReg(0x2A)
         self.LCD_WriteData_8bit((Xstart + self.LCD_X_Adjust) >> 8)
         self.LCD_WriteData_8bit((Xstart + self.LCD_X_Adjust) & 0xff)
         self.LCD_WriteData_8bit((Xend - 1 + self.LCD_X_Adjust) >> 8)
         self.LCD_WriteData_8bit((Xend - 1 + self.LCD_X_Adjust) & 0xff)
-
-        #set the Y coordinates
         self.LCD_WriteReg(0x2B)
         self.LCD_WriteData_8bit((Ystart + self.LCD_Y_Adjust) >> 8)
         self.LCD_WriteData_8bit((Ystart + self.LCD_Y_Adjust) & 0xff)
         self.LCD_WriteData_8bit((Yend - 1 + self.LCD_Y_Adjust) >> 8)
         self.LCD_WriteData_8bit((Yend - 1 + self.LCD_Y_Adjust) & 0xff)
-
         self.LCD_WriteReg(0x2C)
 
     def LCD_Clear(self):
-        if self.display_type == "CARDPUTER_320":
+        if self.display_type in self._FB_DISPLAYS:
             LCD_Config.fb_write(b'\x00' * LCD_Config.FB_SIZE)
             return
         _buffer = [0x00]*(self.width * self.height * 2)
@@ -555,7 +442,7 @@ class LCD:
         if imwidth != self.width or imheight != self.height:
             Image = Image.resize((self.width, self.height))
 
-        if self.display_type == "CARDPUTER_320":
+        if self.display_type in self._FB_DISPLAYS:
             img = Image.convert("RGB")
             arr = np.asarray(img)
             r = (arr[..., 0].astype(np.uint16) >> 3) << 11
@@ -574,7 +461,6 @@ class LCD:
             for i in range(0,len(pix),4096):
                 LCD_Config.SPI_Write_Byte(pix[i:i+4096])
 
-        # Mirror the LCD frame for remote clients (throttled)
         if _FRAME_MIRROR_ENABLED or _CARDPUTER_FRAME_ENABLED:
             global _last_frame_save
             try:
@@ -582,7 +468,6 @@ class LCD:
                 if (now - _last_frame_save) >= _FRAME_MIRROR_INTERVAL:
                     if _FRAME_MIRROR_ENABLED:
                         Image.save(_FRAME_MIRROR_PATH, "JPEG", quality=80)
-                    # Raw frame for HDMI mirror (no compression, no decode needed)
                     try:
                         raw = Image.convert("RGB").tobytes()
                         with open("/dev/shm/raspyjack_raw.rgb", "wb") as _rf:

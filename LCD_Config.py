@@ -1,7 +1,8 @@
 ##
  #  @filename   :   DEV_Config.py
  #  @brief      :   LCD hardware interface implements (GPIO, SPI)
- #                   Supports: SPI displays (ST7735, ST7789) + CardputerZero framebuffer
+ #                   Supports: SPI displays (ST7735, ST7789), framebuffer displays
+ #                   (CARDPUTER_320 320x170, POCKETTERM_640 640x480)
  #  @author     :   Yehui from Waveshare (original), 7h30th3r0n3 (CardputerZero)
  #
  # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -54,19 +55,27 @@ if _DISPLAY_TYPE != "CARDPUTER_320":
         except Exception:
             pass
 
+# ---------------------------------------------------------------------------
+# Framebuffer display table
+# ---------------------------------------------------------------------------
+_FB_DISPLAYS = {
+    "POCKETTERM_640": {"w": 640, "h": 480, "names": ()},
+    "CARDPUTER_320": {"w": 320, "h": 170, "names": ("st7789v_m5st", "panel-mipi-dbi")},
+}
 
-if _DISPLAY_TYPE == "CARDPUTER_320":
+if _DISPLAY_TYPE in _FB_DISPLAYS:
     # ===================================================================
-    # CardputerZero: framebuffer stub (no SPI, no GPIO for display)
+    # Framebuffer display (no SPI, no GPIO for display)
     # ===================================================================
     import mmap
+
+    _CFG = _FB_DISPLAYS[_DISPLAY_TYPE]
 
     LCD_RST_PIN = -1
     LCD_DC_PIN = -1
     LCD_CS_PIN = -1
     LCD_BL_PIN = -1
 
-    _FB_NAMES = ("st7789v_m5st", "panel-mipi-dbi")
     FB_DEVICE = os.environ.get("RJ_FB_DEVICE", "")
     if not FB_DEVICE:
         FB_DEVICE = "/dev/fb0"
@@ -74,13 +83,13 @@ if _DISPLAY_TYPE == "CARDPUTER_320":
             _fb_name_path = f"/sys/class/graphics/fb{_i}/name"
             try:
                 with open(_fb_name_path) as _fn:
-                    if any(n in _fn.read() for n in _FB_NAMES):
+                    if any(n in _fn.read() for n in _CFG["names"]):
                         FB_DEVICE = f"/dev/fb{_i}"
                         break
             except Exception:
                 pass
-    FB_WIDTH = 320
-    FB_HEIGHT = 170
+    FB_WIDTH = _CFG["w"]
+    FB_HEIGHT = _CFG["h"]
     FB_BPP = 16
     FB_SIZE = FB_WIDTH * FB_HEIGHT * (FB_BPP // 8)
 

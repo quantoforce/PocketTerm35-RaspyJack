@@ -1,25 +1,15 @@
 """
-evdev_keys – TCA8418 keyboard reader for M5Stack CardputerZero
+evdev_keys – keyboard reader for TCA8418 (CardputerZero) and USB Pico (PT35).
+Auto-detects keyboard device and selects the appropriate keymap.
 """
-
-import threading
-import evdev
 import os
+import threading
+import time
 
-# Auto-detect TCA8418 keyboard device
-EVDEV_DEVICE = os.environ.get('RJ_KEYBOARD_DEVICE', '')
-if not EVDEV_DEVICE:
-    EVDEV_DEVICE = '/dev/input/event3'  # fallback
-    for _i in range(8):
-        try:
-            with open(f'/sys/class/input/event{_i}/device/name') as _n:
-                if 'tca8418' in _n.read().lower():
-                    EVDEV_DEVICE = f'/dev/input/event{_i}'
-                    break
-        except Exception:
-            pass
+import evdev
 
-_KEYMAP = {
+# --- Keymaps ---------------------------------------------------------------
+_KEYMAP_TCA8418 = {
     103: 'KEY_UP_PIN',
     108: 'KEY_DOWN_PIN',
     105: 'KEY_LEFT_PIN',
@@ -34,21 +24,57 @@ _KEYMAP = {
     14:  'KEY2_PIN',
     15:  'KEY3_PIN',
 }
+_KEYMAP_USB = {
+    103: 'KEY_UP_PIN',
+    108: 'KEY_DOWN_PIN',
+    105: 'KEY_LEFT_PIN',
+    106: 'KEY_RIGHT_PIN',
+    28:  'KEY_PRESS_PIN',
+    99:  'KEY1_PIN',
+    119: 'KEY2_PIN',
+    14:  'KEY3_PIN',
+}
+
+# --- Device detection ------------------------------------------------------
+def _device_name(path):
+    """Resolve human-readable device name for an event node."""
+    try:
+        base = os.path.basename(os.path.realpath(path))
+        with open(f'/sys/class/input/{base}/device/name') as f:
+            return f.read().lower()
+    except Exception:
+        return ''
+
+def _find_keyboard_device():
+    env = os.environ.get('RJ_KEYBOARD_DEVICE', '')
+    if env:
+        name = _device_name(env)
+        if 'pico' in name or 'usb-' in env:
+            return env, _KEYMAP_USB
+        return env, _KEYMAP_TCA8418
+    for i in range(8):
+        path = f'/dev/input/event{i}'
+        name = _device_name(path)
+        if 'tca8418' in name:
+            return path, _KEYMAP_TCA8418
+        if 'pico' in name:
+            return path, _KEYMAP_USB
+    return '/dev/input/event3', _KEYMAP_TCA8418
+
+EVDEV_DEVICE, _KEYMAP = _find_keyboard_device()
 
 _REVERSE_MAP = {}
 for _code, _name in _KEYMAP.items():
     _REVERSE_MAP.setdefault(_name, []).append(_code)
 
+# --- State ----------------------------------------------------------------
 _key_state = {}
 _lock = threading.Lock()
 _device = None
 _thread = None
-_RAW_PIPE = "/dev/shm/rj_key_events"
-
-
 _PAUSE_FLAG = "/dev/shm/rj_evdev_pause"
 
-
+# --- Reader ---------------------------------------------------------------
 def _reader_loop():
     global _device
     while True:
@@ -60,7 +86,6 @@ def _reader_loop():
                     except Exception:
                         pass
                     _device = None
-                import time
                 time.sleep(0.2)
                 continue
             if _device is None:
@@ -79,9 +104,7 @@ def _reader_loop():
                     _key_state[event.code] = event.value > 0
         except Exception:
             _device = None
-            import time
             time.sleep(0.5)
-
 
 def start():
     global _thread
@@ -90,22 +113,19 @@ def start():
     _thread = threading.Thread(target=_reader_loop, daemon=True)
     _thread.start()
 
-
-def is_pressed(button_name: str) -> bool:
+# --- Public API -----------------------------------------------------------
+def is_pressed(button_name):
     codes = _REVERSE_MAP.get(button_name, [])
     with _lock:
         return any(_key_state.get(c, False) for c in codes)
 
-
-def is_key_pressed(evdev_code: int) -> bool:
+def is_key_pressed(evdev_code):
     with _lock:
         return _key_state.get(evdev_code, False)
 
-
-def any_pressed() -> bool:
+def any_pressed():
     with _lock:
         return any(_key_state.values())
-
 
 def get_pressed_button():
     with _lock:
@@ -114,23 +134,19 @@ def get_pressed_button():
                 return _KEYMAP[code]
     return None
 
-
 def pause():
     try:
-        with open(_PAUSE_FLAG, "w") as f:
+        with open(_PAUSE_FLAG, "w"):
             pass
     except Exception:
         pass
-    import time
     time.sleep(0.3)
-
 
 def resume():
     try:
         os.unlink(_PAUSE_FLAG)
     except OSError:
         pass
-
 
 if not os.path.exists(_PAUSE_FLAG):
     start()

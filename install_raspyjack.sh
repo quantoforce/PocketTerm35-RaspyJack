@@ -67,17 +67,19 @@ else
   echo "    1) ST7735_128    — 1.44\" 128×128  (original Waveshare HAT)"
   echo "    2) ST7789_240    — 1.3\"  240×240"
   echo "    3) CARDPUTER_320 — M5Stack CardputerZero 320×170"
+  echo "    4) POCKETTERM_640 — PocketTerm35 640×480"
   echo ""
   DEFAULT_CHOICE=1
   if [[ $IS_CARDPUTER -eq 1 ]]; then
     DEFAULT_CHOICE=3
     info "CardputerZero hardware auto-detected!"
   fi
-  read -rp "  Enter choice [1/2/3] (default: $DEFAULT_CHOICE): " DISPLAY_CHOICE
+  read -rp "  Enter choice [1/2/3/4] (default: $DEFAULT_CHOICE): " DISPLAY_CHOICE
   DISPLAY_CHOICE="${DISPLAY_CHOICE:-$DEFAULT_CHOICE}"
   case "$DISPLAY_CHOICE" in
     2) DISPLAY_TYPE="ST7789_240" ;;
     3) DISPLAY_TYPE="CARDPUTER_320" ;;
+    4) DISPLAY_TYPE="POCKETTERM_640" ;;
     *) DISPLAY_TYPE="ST7735_128" ;;
   esac
 fi
@@ -95,7 +97,7 @@ with open("/root/Raspyjack/gui_conf.json") as f:
 if "DISPLAY" not in data:
     data["DISPLAY"] = {}
 data["DISPLAY"]["type"] = dtype
-data["DISPLAY"]["supported_types"] = ["ST7735_128", "ST7789_240", "CARDPUTER_320"]
+data["DISPLAY"]["supported_types"] = ["ST7735_128", "ST7789_240", "CARDPUTER_320", "POCKETTERM_640"]
 # Preserve flip if it exists
 # (flip key is NOT overwritten, it stays as-is)
 with open("/root/Raspyjack/gui_conf.json", "w") as f:
@@ -120,7 +122,7 @@ data = {
     },
     "DISPLAY": {
         "type": dtype,
-        "supported_types": ["ST7735_128", "ST7789_240", "CARDPUTER_320"],
+        "supported_types": ["ST7735_128", "ST7789_240", "CARDPUTER_320", "POCKETTERM_640"],
         "flip": False
     },
     "LOCK": {
@@ -232,8 +234,8 @@ PACKAGES=(
 #   utilities/youtube.py, utilities/video_player.py, utilities/tv.py (RaspyJack TV).
 # python3-numpy / python3-pil (above) are required by their framebuffer render path.
 
-# CardputerZero extra packages
-if [[ "$DISPLAY_TYPE" == "CARDPUTER_320" ]]; then
+# Framebuffer display extra packages (CardputerZero + PocketTerm35)
+if [[ "$DISPLAY_TYPE" == "CARDPUTER_320" || "$DISPLAY_TYPE" == "POCKETTERM_640" ]]; then
   PACKAGES+=( mpv rtl-433 bluez-alsa-utils chocolate-doom freedoom xvfb xdotool )
 fi
 
@@ -435,7 +437,19 @@ else
   info "DVB blacklist already configured"
 fi
 
-# ───── 3 ▸ enable I²C / SPI & kernel modules ────────────────
+# ───── 3 ▸ RPi.GPIO shim (evdev keyboard) ───────────────────
+if [[ "$DISPLAY_TYPE" == "CARDPUTER_320" || "$DISPLAY_TYPE" == "POCKETTERM_640" ]]; then
+  step "Creating RPi.GPIO shim for evdev keyboard …"
+  mkdir -p /root/Raspyjack/RPi
+  cat > /root/Raspyjack/RPi/__init__.py <<'RPYINIT'
+RPYINIT
+  cat > /root/Raspyjack/RPi/GPIO.py <<'RPYGPIO'
+from gpio_shim import *
+RPYGPIO
+  info "RPi/GPIO.py shim installed (evdev-based keyboard input)"
+fi
+
+# ───── 3b ▸ enable I²C / SPI & kernel modules ───────────────
 if [[ "$DISPLAY_TYPE" == "CARDPUTER_320" ]]; then
   info "CardputerZero: framebuffer display — skipping SPI/I²C HAT setup"
 
@@ -449,15 +463,7 @@ defaults.ctl.card $ES_CARD
 ALSA
   info "ALSA configured for ES8388 (card $ES_CARD)"
 
-  # Create RPi/GPIO.py shim (shadows system RPi.GPIO with evdev-based input)
-  step "Creating RPi.GPIO shim for CardputerZero keyboard …"
-  mkdir -p /root/Raspyjack/RPi
-  cat > /root/Raspyjack/RPi/__init__.py <<'RPYINIT'
-RPYINIT
-  cat > /root/Raspyjack/RPi/GPIO.py <<'RPYGPIO'
-from gpio_shim import *
-RPYGPIO
-  info "RPi/GPIO.py shim installed (evdev-based keyboard input)"
+  # RPi/GPIO.py shim is created below (common for CARDPUTER_320 and POCKETTERM_640)
 
   # Install opencv-python-headless via pip (not in apt)
   step "Installing OpenCV …"
