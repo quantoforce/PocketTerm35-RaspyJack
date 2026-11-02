@@ -39,11 +39,23 @@ fi
 # ───── 1 ▸ locate active config.txt ──────
 CFG=/boot/firmware/config.txt; [[ -f $CFG ]] || CFG=/boot/config.txt
 info "Using config file: $CFG"
+# If the file doesn't end with a newline, add one before appending —
+# otherwise the appended line glues to the last line (that glued
+# `dwc2,dr_mode=hostdtparam=i2c1=on` broke the USB overlay and the Pico
+# keyboard).
+ensure_trailing_newline() {
+  local f="$1"
+  if [[ -s "$f" && -n "$(tail -c1 "$f")" ]]; then
+    echo | sudo tee -a "$f" >/dev/null
+  fi
+}
+
 add_dtparam() {
   local param="$1"
   if grep -qE "^#?\s*${param%=*}=on" "$CFG"; then
     sudo sed -Ei "s|^#?\s*${param%=*}=.*|${param%=*}=on|" "$CFG"
   else
+    ensure_trailing_newline "$CFG"
     echo "$param" | sudo tee -a "$CFG" >/dev/null
   fi
 }
@@ -481,10 +493,12 @@ else
     add_dtparam dtparam=i2c1=on
     add_dtparam dtparam=spi=on
     MODULES=(i2c-bcm2835 i2c-dev spi_bcm2835 spidev)
+    ensure_trailing_newline /etc/modules
     for m in "${MODULES[@]}"; do
       grep -qxF "$m" /etc/modules || echo "$m" | sudo tee -a /etc/modules >/dev/null
       sudo modprobe "$m" || true
     done
+    ensure_trailing_newline "$CFG"
     grep -qE '^dtoverlay=spi0-[12]cs' "$CFG" || echo 'dtoverlay=spi0-2cs' | sudo tee -a "$CFG" >/dev/null
     info "I²C & SPI configured"
   fi
