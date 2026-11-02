@@ -30,10 +30,10 @@ reboot
 | Control | Action |
 |---|---|
 | UP / DOWN / LEFT / RIGHT | Navigate |
-| OK | Enter / Ok |
-| KEY1 | Select |
-| KEY2 | Start |
-| KEY3 | Del |
+| Enter | OK |
+| Select | KEY1 |
+| Start | KEY2 |
+| Del | KEY3 |
 
 On PocketTerm35, input is read from the USB Pico keyboard. The button mapping remains the same as on the original hardware.
 
