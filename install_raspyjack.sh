@@ -952,6 +952,24 @@ if [ -d "/root/Raspyjack/bin" ]; then
     info "Permissions set for files in /root/Raspyjack/bin/"
 fi
 
+# 7‑b ▸ PT35: console/cursor off on the LCD (last step, right before reboot)
+# The CardputerZero block (fbcon=map:99 / vtcon unbind) doesn't fit the
+# Waveshare SPI panel — two installs failed to boot after it. PT35 gets
+# the on-device verified recipe instead: disable getty + hide the cursor.
+# Applied at the very end so the console stays alive during the install
+# (apt/debconf questions still render on the LCD) and goes off for reboot.
+if [[ "$DISPLAY_TYPE" == "POCKETTERM_640" ]]; then
+  step "Disabling console/cursor on PT35 LCD …"
+  sudo systemctl stop getty@tty1.service 2>/dev/null || true
+  sudo systemctl disable getty@tty1.service 2>/dev/null || true
+  CMDLINE="/boot/firmware/cmdline.txt"
+  if [ -f "$CMDLINE" ]; then
+    grep -q "vt.global_cursor_default=0" "$CMDLINE" || sudo sed -i 's/$/ vt.global_cursor_default=0/' "$CMDLINE"
+  fi
+  echo 0 | sudo tee /sys/class/graphics/fbcon/cursor_blink 2>/dev/null || true
+  info "Console/cursor off on PT35 LCD — takes effect after reboot"
+fi
+
 step "Installation finished successfully!"
 info "⚠️  Reboot is recommended to ensure overlays & services start cleanly."
 info "📡 For WiFi attacks: Plug in USB WiFi dongle and run payloads/interception/deauth.py"
